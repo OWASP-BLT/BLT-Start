@@ -1124,11 +1124,32 @@ git rebase upstream/main</code></pre>
         }
       }
 
+      // Prevent keyboard/pointer interaction with the rest of the page
+      // while the mobile drawer is open (modal-like behavior).
+      function setMainContentInert(enabled) {
+        const headerEl = document.querySelector('header');
+        const mainEl = document.querySelector('main');
+        const footerEl = document.querySelector('footer');
+
+        [headerEl, mainEl, footerEl].forEach((el) => {
+          if (!el) return;
+          try {
+            el.inert = enabled;
+          } catch (e) {
+            // ignore; we'll use the attribute fallback below
+          }
+
+          if (enabled) el.setAttribute('inert', '');
+          else el.removeAttribute('inert');
+        });
+      }
+
       function setDrawerOpen(open) {
         if (!sidebarDrawer || !sidebarOverlay) return;
 
         if (open) {
           sidebarDrawer.setAttribute('aria-hidden', 'false');
+          setMainContentInert(true);
           setDrawerInert(false);
           enableDrawerInTabOrder();
 
@@ -1146,6 +1167,7 @@ git rebase upstream/main</code></pre>
             closeBtn.focus({ preventScroll: true });
           }
         } else {
+          setMainContentInert(false);
           sidebarDrawer.setAttribute('aria-hidden', 'true');
           setDrawerInert(true);
           disableDrawerFromTabOrder();
