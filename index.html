@@ -5,6 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>BLT Contributor Start Page</title>
 
+  <script>
+    // Apply saved theme before first paint to avoid light/dark flash.
+    (function () {
+      try {
+        var stored = localStorage.getItem('blt-theme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = stored === 'dark' ? 'dark' : (stored === 'light' ? 'light' : (prefersDark ? 'dark' : 'light'));
+        document.documentElement.classList.toggle('dark', theme === 'dark');
+      } catch (e) { /* ignore */ }
+    }());
+  </script>
+
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -964,6 +976,8 @@ git rebase upstream/main</code></pre>
            bg-white dark:bg-blt-surface border-r border-blt-border dark:border-gray-700 lg:hidden"
     aria-label="Mobile navigation"
     tabindex="-1"
+    aria-hidden="true"
+    inert
   >
     <div class="flex items-center justify-between p-4 border-b border-blt-border dark:border-gray-700">
       <span class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blt-primary text-white text-sm font-extrabold tracking-tight select-none">
@@ -1029,13 +1043,8 @@ git rebase upstream/main</code></pre>
       }
 
       (function initTheme() {
-        const stored = localStorage.getItem('blt-theme');
-        if (stored === 'dark' || stored === 'light') {
-          applyTheme(stored);
-          return;
-        }
-        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyTheme(prefersDark ? 'dark' : 'light');
+        // Theme class is already applied by the inline <head> script.
+        updateThemeIcon();
       }());
 
       if (themeToggle) {
@@ -1055,10 +1064,74 @@ git rebase upstream/main</code></pre>
       const sidebarDrawer = document.getElementById('sidebar-drawer');
       const sidebarDrawerNav = document.getElementById('sidebar-drawer-nav');
 
+      const focusableSelector = [
+        'a[href]',
+        'button:not([disabled])',
+        'input:not([disabled])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]',
+        '[contenteditable="true"]'
+      ].join(',');
+
+      function getDrawerFocusables() {
+        if (!sidebarDrawer) return [];
+        return Array.from(sidebarDrawer.querySelectorAll(focusableSelector)).filter(function (el) {
+          // aria-hidden keeps screen readers from "seeing" it, but doesn't always prevent focus via tab.
+          // We handle both, so keep this filter simple and robust.
+          return el && el.getAttribute('aria-hidden') !== 'true';
+        });
+      }
+
+      function disableDrawerFromTabOrder() {
+        const focusables = getDrawerFocusables();
+        focusables.forEach((el) => {
+          if (el.dataset.bltDrawerOrigTabindexStored !== 'true') {
+            el.dataset.bltDrawerOrigTabindexStored = 'true';
+            el.dataset.bltDrawerHadTabindex = el.hasAttribute('tabindex') ? 'true' : 'false';
+            el.dataset.bltDrawerOrigTabindex = el.getAttribute('tabindex') || '';
+          }
+          el.setAttribute('tabindex', '-1');
+        });
+      }
+
+      function enableDrawerInTabOrder() {
+        const focusables = getDrawerFocusables();
+        focusables.forEach((el) => {
+          if (el.dataset.bltDrawerOrigTabindexStored === 'true') {
+            if (el.dataset.bltDrawerHadTabindex === 'true') {
+              el.setAttribute('tabindex', el.dataset.bltDrawerOrigTabindex);
+            } else {
+              el.removeAttribute('tabindex');
+            }
+
+            delete el.dataset.bltDrawerOrigTabindexStored;
+            delete el.dataset.bltDrawerHadTabindex;
+            delete el.dataset.bltDrawerOrigTabindex;
+          }
+        });
+      }
+
+      function setDrawerInert(enabled) {
+        if (!sidebarDrawer) return;
+        try {
+          // Supported in modern browsers
+          sidebarDrawer.inert = enabled;
+        } catch (e) {
+          // Fallback for older browsers
+          if (enabled) sidebarDrawer.setAttribute('inert', '');
+          else sidebarDrawer.removeAttribute('inert');
+        }
+      }
+
       function setDrawerOpen(open) {
         if (!sidebarDrawer || !sidebarOverlay) return;
 
         if (open) {
+          sidebarDrawer.setAttribute('aria-hidden', 'false');
+          setDrawerInert(false);
+          enableDrawerInTabOrder();
+
           sidebarOverlay.classList.remove('hidden');
           sidebarOverlay.setAttribute('aria-hidden', 'false');
 
@@ -1066,8 +1139,17 @@ git rebase upstream/main</code></pre>
           sidebarDrawer.classList.add('translate-x-0');
 
           document.body.style.overflow = 'hidden';
-          sidebarDrawer.focus && sidebarDrawer.focus({ preventScroll: true });
+
+          // Move focus into the drawer for keyboard users.
+          const closeBtn = sidebarClose || sidebarDrawer.querySelector('#sidebar-close');
+          if (closeBtn && typeof closeBtn.focus === 'function') {
+            closeBtn.focus({ preventScroll: true });
+          }
         } else {
+          sidebarDrawer.setAttribute('aria-hidden', 'true');
+          setDrawerInert(true);
+          disableDrawerFromTabOrder();
+
           sidebarOverlay.classList.add('hidden');
           sidebarOverlay.setAttribute('aria-hidden', 'true');
 
@@ -1079,7 +1161,25 @@ git rebase upstream/main</code></pre>
       }
 
       function openDrawer() { setDrawerOpen(true); }
-      function closeDrawer() { setDrawerOpen(false); }
+      function closeDrawer() {
+        setDrawerOpen(false);
+
+        // Restore focus back to the open button after closing.
+        // Only do this when the button is actually visible (mobile breakpoint),
+        // otherwise focus can land on controls that are hidden on desktop.
+        const isSidebarOpenButtonVisible =
+          sidebarOpen && sidebarOpen.offsetParent !== null;
+
+        if (isSidebarOpenButtonVisible && typeof sidebarOpen.focus === 'function') {
+          window.setTimeout(() => {
+            try {
+              sidebarOpen.focus({ preventScroll: true });
+            } catch (e) {
+              sidebarOpen.focus();
+            }
+          }, 0);
+        }
+      }
 
       // Clone the existing desktop sidebar into the drawer (so it stays the same)
       (function initDrawerNavClone() {
@@ -1099,6 +1199,9 @@ git rebase upstream/main</code></pre>
         sidebarDrawerNav.appendChild(cloned);
       }());
 
+      // Ensure drawer controls are not reachable when the drawer is initially closed.
+      setDrawerOpen(false);
+
       if (sidebarOpen) sidebarOpen.addEventListener('click', openDrawer);
       if (sidebarClose) sidebarClose.addEventListener('click', closeDrawer);
       if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeDrawer);
@@ -1106,6 +1209,15 @@ git rebase upstream/main</code></pre>
       window.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeDrawer();
       });
+
+      // If the viewport crosses into the desktop layout (lg), close the mobile drawer.
+      // Prevents overlay from staying visible and restores body scroll.
+      const desktopMediaQuery = window.matchMedia && window.matchMedia('(min-width: 1024px)');
+      if (desktopMediaQuery && typeof desktopMediaQuery.addEventListener === 'function') {
+        desktopMediaQuery.addEventListener('change', (e) => {
+          if (e.matches) closeDrawer();
+        });
+      }
 
       // -----------------------
       // Search (scroll to section)
