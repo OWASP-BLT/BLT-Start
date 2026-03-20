@@ -63,6 +63,7 @@
         <div class="relative">
           <i class="fa-solid fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm" aria-hidden="true"></i>
           <input
+            id="header-search"
             type="search"
             placeholder="Search docs, issues, PRs…"
             class="w-full border border-gray-400 rounded-md pl-9 pr-4 py-2 text-sm
@@ -71,11 +72,39 @@
                    dark:placeholder-gray-400 dark:focus:border-red-500 dark:focus:ring-red-500"
             aria-label="Search"
           />
+          <div
+            id="search-results"
+            class="absolute left-0 right-0 top-full mt-2 rounded-md border border-blt-border dark:border-gray-700
+                   bg-white dark:bg-blt-surface shadow-lg hidden z-50"
+            role="listbox"
+            aria-label="Search results"
+          ></div>
         </div>
       </div>
 
       <!-- CTA buttons -->
       <nav class="flex items-center gap-2 shrink-0" aria-label="Header actions">
+        <button
+          id="sidebar-open"
+          type="button"
+          class="lg:hidden inline-flex items-center justify-center w-10 h-10 rounded-md
+                 bg-blt-primary text-white text-sm font-medium hover:bg-blt-hover transition-colors"
+          aria-label="Open navigation"
+        >
+          <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+
+        <button
+          id="theme-toggle"
+          type="button"
+          class="inline-flex items-center justify-center w-10 h-10 rounded-md
+                 border border-blt-border dark:border-gray-700 text-gray-700 dark:text-gray-300
+                 hover:border-blt-primary dark:hover:border-red-500 hover:bg-blt-sidebar transition-colors"
+          aria-label="Toggle dark mode"
+        >
+          <i id="theme-toggle-icon" class="fa-solid fa-moon" aria-hidden="true"></i>
+        </button>
+
         <a
           href="https://github.com/OWASP-BLT/BLT/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22"
           target="_blank" rel="noopener noreferrer"
@@ -105,7 +134,7 @@
   <!-- ──────────────────────── LAYOUT: SIDEBAR + MAIN ──────────────────── -->
   <div class="max-w-screen-xl mx-auto px-4 sm:px-6 py-8 flex gap-8">
 
-    <!-- ─── SIDEBAR ─── -->
+    <!-- ──── SIDEBAR ──── -->
     <aside class="hidden lg:block w-60 shrink-0" aria-label="Page navigation">
       <nav class="sticky top-24 space-y-6">
 
@@ -218,7 +247,7 @@
       </nav>
     </aside>
 
-    <!-- ─── MAIN CONTENT ─── -->
+    <!-- ──── MAIN CONTENT ──── -->
     <main class="flex-1 min-w-0 space-y-16">
 
       <!-- ──── HERO / WELCOME ──── -->
@@ -924,39 +953,326 @@ git rebase upstream/main</code></pre>
     </div>
   </footer>
 
+  <!-- Mobile sidebar + overlay + back-to-top -->
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black/30 z-50 hidden" aria-hidden="true"></div>
+
+  <aside
+    id="sidebar-drawer"
+    class="fixed top-0 left-0 h-full w-72 z-50 transform -translate-x-full transition-transform duration-200 ease-out
+           bg-white dark:bg-blt-surface border-r border-blt-border dark:border-gray-700 lg:hidden"
+    aria-label="Mobile navigation"
+    tabindex="-1"
+  >
+    <div class="flex items-center justify-between p-4 border-b border-blt-border dark:border-gray-700">
+      <span class="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blt-primary text-white text-sm font-extrabold tracking-tight select-none">
+        BLT
+      </span>
+      <button
+        id="sidebar-close"
+        type="button"
+        class="inline-flex items-center justify-center w-10 h-10 rounded-md
+               border border-blt-border dark:border-gray-700 text-gray-700 dark:text-gray-300
+               hover:border-blt-primary dark:hover:border-red-500 hover:bg-blt-sidebar transition-colors"
+        aria-label="Close navigation"
+      >
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      </button>
+    </div>
+
+    <nav id="sidebar-drawer-nav" class="p-4 overflow-y-auto space-y-6"></nav>
+  </aside>
+
+  <button
+    id="back-to-top"
+    type="button"
+    class="fixed bottom-6 right-6 z-40 hidden p-3 rounded-full bg-blt-primary text-white shadow-lg
+           hover:bg-blt-hover focus:outline-none focus:ring-2 focus:ring-red-600
+           focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-blt-surface"
+    aria-label="Back to top"
+  >
+    <i class="fa-solid fa-arrow-up" aria-hidden="true"></i>
+  </button>
+
   <script>
     // Set current year in footer
     document.getElementById('year').textContent = new Date().getFullYear();
 
-    // Sidebar active-link highlighting on scroll
     (function () {
-      const sections = document.querySelectorAll('section[id]');
-      const navLinks = document.querySelectorAll('aside nav a[href^="#"]');
+      const prefersReducedMotion =
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-      const activeClasses   = ['bg-blt-sidebar', 'text-blt-primary'];
-      const inactiveClasses = ['text-gray-700', 'dark:text-gray-300',
-                               'hover:bg-blt-sidebar', 'hover:text-blt-primary',
-                               'dark:hover:bg-gray-700'];
+      const htmlEl = document.documentElement;
 
-      function onScroll() {
-        let currentId = '';
-        sections.forEach(function (section) {
-          if (window.scrollY >= section.offsetTop - 100) {
-            currentId = section.id;
+      // -----------------------
+      // Theme toggle
+      // -----------------------
+      const themeToggle = document.getElementById('theme-toggle');
+      const themeIcon = document.getElementById('theme-toggle-icon');
+
+      function isDarkActive() {
+        return htmlEl.classList.contains('dark');
+      }
+
+      function updateThemeIcon() {
+        if (!themeIcon) return;
+        themeIcon.className = isDarkActive()
+          ? 'fa-solid fa-sun'
+          : 'fa-solid fa-moon';
+      }
+
+      function applyTheme(theme) {
+        const dark = theme === 'dark';
+        htmlEl.classList.toggle('dark', dark);
+        updateThemeIcon();
+      }
+
+      (function initTheme() {
+        const stored = localStorage.getItem('blt-theme');
+        if (stored === 'dark' || stored === 'light') {
+          applyTheme(stored);
+          return;
+        }
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        applyTheme(prefersDark ? 'dark' : 'light');
+      }());
+
+      if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+          const next = isDarkActive() ? 'light' : 'dark';
+          localStorage.setItem('blt-theme', next);
+          applyTheme(next);
+        });
+      }
+
+      // -----------------------
+      // Mobile sidebar drawer
+      // -----------------------
+      const sidebarOpen = document.getElementById('sidebar-open');
+      const sidebarClose = document.getElementById('sidebar-close');
+      const sidebarOverlay = document.getElementById('sidebar-overlay');
+      const sidebarDrawer = document.getElementById('sidebar-drawer');
+      const sidebarDrawerNav = document.getElementById('sidebar-drawer-nav');
+
+      function setDrawerOpen(open) {
+        if (!sidebarDrawer || !sidebarOverlay) return;
+
+        if (open) {
+          sidebarOverlay.classList.remove('hidden');
+          sidebarOverlay.setAttribute('aria-hidden', 'false');
+
+          sidebarDrawer.classList.remove('-translate-x-full');
+          sidebarDrawer.classList.add('translate-x-0');
+
+          document.body.style.overflow = 'hidden';
+          sidebarDrawer.focus && sidebarDrawer.focus({ preventScroll: true });
+        } else {
+          sidebarOverlay.classList.add('hidden');
+          sidebarOverlay.setAttribute('aria-hidden', 'true');
+
+          sidebarDrawer.classList.add('-translate-x-full');
+          sidebarDrawer.classList.remove('translate-x-0');
+
+          document.body.style.overflow = '';
+        }
+      }
+
+      function openDrawer() { setDrawerOpen(true); }
+      function closeDrawer() { setDrawerOpen(false); }
+
+      // Clone the existing desktop sidebar into the drawer (so it stays the same)
+      (function initDrawerNavClone() {
+        if (!sidebarDrawerNav) return;
+
+        const desktopNav = document.querySelector('aside[aria-label="Page navigation"] nav');
+        if (!desktopNav) return;
+
+        sidebarDrawerNav.innerHTML = '';
+        const cloned = desktopNav.cloneNode(true);
+
+        // Close drawer after clicking a section link
+        cloned.querySelectorAll('a[href^="#"]').forEach((a) => {
+          a.addEventListener('click', () => closeDrawer());
+        });
+
+        sidebarDrawerNav.appendChild(cloned);
+      }());
+
+      if (sidebarOpen) sidebarOpen.addEventListener('click', openDrawer);
+      if (sidebarClose) sidebarClose.addEventListener('click', closeDrawer);
+      if (sidebarOverlay) sidebarOverlay.addEventListener('click', closeDrawer);
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDrawer();
+      });
+
+      // -----------------------
+      // Search (scroll to section)
+      // -----------------------
+      const searchInput = document.getElementById('header-search');
+      const resultsBox = document.getElementById('search-results');
+
+      function hideResults() {
+        if (!resultsBox) return;
+        resultsBox.classList.add('hidden');
+        resultsBox.innerHTML = '';
+      }
+
+      function showResults(items) {
+        if (!resultsBox) return;
+
+        resultsBox.innerHTML = '';
+        resultsBox.classList.remove('hidden');
+
+        const max = 8;
+        const trimmed = items.slice(0, max);
+
+        if (trimmed.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'px-3 py-2 text-sm text-gray-500 dark:text-gray-400';
+          empty.textContent = 'No matches';
+          resultsBox.appendChild(empty);
+          return;
+        }
+
+        trimmed.forEach((item) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className =
+            'w-full text-left px-3 py-2 rounded-md text-sm ' +
+            'text-gray-700 dark:text-gray-200 hover:bg-blt-sidebar hover:text-blt-primary transition-colors';
+          btn.setAttribute('role', 'option');
+          btn.textContent = item.title;
+          btn.addEventListener('click', () => navigateToSection(item.id));
+          resultsBox.appendChild(btn);
+        });
+      }
+
+      const sectionsForSearch = Array.from(document.querySelectorAll('section[id]')).map((section) => {
+        const heading =
+          section.querySelector('h1,h2,h3')?.textContent?.trim() ||
+          section.getAttribute('aria-labelledby') ||
+          section.id;
+
+        return { id: section.id, title: heading };
+      });
+
+      function navigateToSection(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+
+        hideResults();
+
+        if (!prefersReducedMotion) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else {
+          el.scrollIntoView({ behavior: 'auto', block: 'start' });
+        }
+
+        // Update hash without jumping the browser
+        history.replaceState(null, '', '#' + id);
+        closeDrawer();
+      }
+
+      function runSearch(query) {
+        const q = query.trim().toLowerCase();
+        if (!q) {
+          hideResults();
+          return;
+        }
+
+        const matches = sectionsForSearch.filter((item) => {
+          return item.title.toLowerCase().includes(q) || item.id.toLowerCase().includes(q);
+        });
+
+        showResults(matches);
+      }
+
+      if (searchInput && resultsBox) {
+        searchInput.addEventListener('input', (e) => runSearch(e.target.value));
+
+        searchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            hideResults();
+            searchInput.blur();
+            return;
+          }
+
+          if (e.key === 'Enter') {
+            if (resultsBox.classList.contains('hidden')) return;
+            const first = resultsBox.querySelector('button[role="option"]');
+            if (first) first.click();
           }
         });
 
-        navLinks.forEach(function (link) {
-          const href = link.getAttribute('href').replace('#', '');
-          if (href === currentId) {
-            link.classList.add(...activeClasses);
-            link.classList.remove(...inactiveClasses);
-            link.setAttribute('aria-current', 'page');
-          } else {
-            link.classList.remove(...activeClasses);
-            link.classList.add(...inactiveClasses);
-            link.removeAttribute('aria-current');
-          }
+        document.addEventListener('mousedown', (e) => {
+          const within =
+            e.target === searchInput ||
+            (resultsBox && resultsBox.contains(e.target));
+
+          if (!within) hideResults();
+        });
+      }
+
+      // -----------------------
+      // Back to top
+      // -----------------------
+      const backToTop = document.getElementById('back-to-top');
+      if (backToTop) {
+        function updateBackToTop() {
+          const shouldShow = window.scrollY > 600;
+          backToTop.classList.toggle('hidden', !shouldShow);
+        }
+
+        window.addEventListener('scroll', updateBackToTop, { passive: true });
+        updateBackToTop();
+
+        backToTop.addEventListener('click', () => {
+          window.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+        });
+      }
+
+      // -----------------------
+      // Sidebar active-link highlighting (desktop + mobile)
+      // -----------------------
+      const sections = document.querySelectorAll('section[id]');
+      const navLinks = document.querySelectorAll(
+        '#sidebar-drawer a[href^="#"], aside[aria-label="Page navigation"] nav a[href^="#"]'
+      );
+
+      const activeClasses = ['bg-blt-sidebar', 'text-blt-primary'];
+      const inactiveClasses = [
+        'text-gray-700',
+        'dark:text-gray-300',
+        'hover:bg-blt-sidebar',
+        'hover:text-blt-primary',
+        'dark:hover:bg-gray-700'
+      ];
+
+      let rafId = null;
+      function onScroll() {
+        if (rafId) return;
+        rafId = window.requestAnimationFrame(() => {
+          rafId = null;
+
+          let currentId = '';
+          sections.forEach(function (section) {
+            if (window.scrollY >= section.offsetTop - 100) {
+              currentId = section.id;
+            }
+          });
+
+          navLinks.forEach(function (link) {
+            const href = link.getAttribute('href').replace('#', '');
+            if (href === currentId) {
+              link.classList.add(...activeClasses);
+              link.classList.remove(...inactiveClasses);
+              link.setAttribute('aria-current', 'page');
+            } else {
+              link.classList.remove(...activeClasses);
+              link.classList.add(...inactiveClasses);
+              link.removeAttribute('aria-current');
+            }
+          });
         });
       }
 
